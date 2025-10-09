@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  quickpod-reaper:
+    build: .
+    image: ${DOCKERHUB_USERNAME:-schnicklbob}/quickpod-reaper:latest
+    container_name: quickpod-reaper
+    hostname: quickpod-reaper
+    
+    # GPU configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, utility]
+    
+    # Port mappings
+    ports:
+      - "6901:6901"  # Kasm web desktop (HTTPS)
+      - "8000:8000"  # vLLM OpenAI-compatible API
+      - "8001:8001"  # SillyTavern web interface
+    
+    # Environment variables
+    environment:
+      # Kasm desktop password
+      - VNC_PW=${VNC_PASSWORD:-quickpod123}
+      
+      # vLLM configuration
+      - VLLM_MODEL=${VLLM_MODEL:-TheBloke/dolphin-2.8-mixtral-8x7b-AWQ}
+      - MAX_CONTEXT=${MAX_CONTEXT:-32768}
+      - VLLM_USE_V1=0
+      
+      # Audio configuration
+      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
+      
+      # Display configuration
+      - DISPLAY=:1
+    
+    # Volume mounts for persistent data
+    volumes:
+      # General workspace
+      - ./workspace:/home/kasm-user/workspace
+      
+      # Reaper configuration and projects
+      - ./reaper-config:/home/kasm-user/.config/REAPER
+      
+      # Audio samples and voice cloning data
+      - ./audio:/home/kasm-user/audio
+      
+      # Optional: Mount local models to avoid re-downloading
+      # - ~/models:/models:ro
+    
+    # Shared memory size (important for large models and audio processing)
+    shm_size: '8gb'
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Optional: Add custom DNS if needed
+    # dns:
+    #   - 8.8.8.8
+    #   - 8.8.4.4
+
+# Optional: Add network configuration
+# networks:
+#   default:
+#     name: quickpod-network
