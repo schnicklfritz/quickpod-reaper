@@ -117,10 +117,9 @@ RUN cd /tmp && \
 # Upgrade pip in venv
 RUN pip install --upgrade pip setuptools wheel
 
-# Create kasm-user
-RUN groupadd -g 1000 kasm-user && \
-    useradd -u 1000 -g 1000 -s /bin/bash -m kasm-user && \
-    usermod -aG ssl-cert kasm-user 2>/dev/null || true && \
+# Create kasm-user with UID/GID 1001 (1000 already taken by base image)
+RUN groupadd -g 1001 kasm-user && \
+    useradd -u 1001 -g 1001 -s /bin/bash -m kasm-user && \
     usermod -aG audio kasm-user && \
     usermod -aG video kasm-user
 
