@@ -138,12 +138,16 @@ RUN mkdir -p /home/kasm-user/.vnc \
     /home/kasm-user/projects \
     /home/kasm-user/.config/REAPER
 
-# Set up KasmVNC for user
+# Fix permissions before switching to kasm-user
+RUN chown -R kasm-user:kasm-user /home/kasm-user
+
+# Set up KasmVNC password as kasm-user
 USER kasm-user
 RUN mkdir -p ~/.vnc && \
     echo "quickpod123" | vncpasswd -f > ~/.vnc/passwd && \
     chmod 600 ~/.vnc/passwd
 
+# Switch back to root for remaining setup
 USER root
 
 # Main startup script
@@ -191,7 +195,7 @@ Terminal=false\n\
 Categories=AudioVideo;Audio;Recorder;' > /home/kasm-user/Desktop/reaper.desktop && \
     chmod +x /home/kasm-user/Desktop/reaper.desktop
 
-# Fix all permissions
+# Final permission fix
 RUN chown -R kasm-user:kasm-user /home/kasm-user
 
 # Set working directory
