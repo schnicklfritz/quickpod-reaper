@@ -144,7 +144,7 @@ RUN chown -R kasm-user:kasm-user /home/kasm-user
 # Set up KasmVNC password as kasm-user
 USER kasm-user
 RUN mkdir -p ~/.vnc && \
-    echo -e "quickpod123\nquickpod123\n" | vncpasswd -u kasm-user -w ~/.vnc/passwd && \
+    printf "quickpod123\nquickpod123\n" | vncpasswd -u kasm-user -w ~/.vnc/passwd && \
     chmod 600 ~/.vnc/passwd
 
 # Switch back to root for remaining setup
