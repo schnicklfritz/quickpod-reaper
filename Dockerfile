@@ -19,17 +19,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install desktop environment and audio dependencies
+# Note: Ubuntu 24.04 uses t64 suffixed packages for time64 support
 RUN apt-get update && apt-get install -y \
     xfce4 \
     xfce4-goodies \
     dbus-x11 \
     xorg \
-    libasound2 \
-    libasound2-plugins \
+    libasound2t64 \
     alsa-utils \
     pulseaudio \
     pulseaudio-utils \
-    libpulse0 \
     libjack-jackd2-0 \
     xdotool \
     libfontconfig1 \
@@ -83,12 +82,12 @@ RUN cd /tmp && \
     cd / && rm -rf /tmp/reaper*
 
 # Upgrade pip and install PyTorch with CUDA 13.0
-RUN python3 -m pip install --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir \
+RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-packages && \
+    pip3 install --no-cache-dir --break-system-packages \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # Install vLLM
-RUN pip3 install --no-cache-dir vllm
+RUN pip3 install --no-cache-dir --break-system-packages vllm
 
 # Clone SillyTavern
 RUN cd /opt && \
