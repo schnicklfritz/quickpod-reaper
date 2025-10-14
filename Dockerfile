@@ -103,10 +103,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel
 
 # ============================================
-# AI AUDIO PROCESSING DEPENDENCIES
+# ESSENTIAL AUDIO TOOLS ONLY
 # ============================================
 
-# Install FFmpeg and audio tools
+# Install FFmpeg and essential audio CLI tools (combined to reduce layers)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     sox \
@@ -114,98 +114,32 @@ RUN apt-get update && apt-get install -y \
     rubberband-cli \
     lame \
     flac \
-    vorbis-tools \
-    opus-tools \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Cython first (required for madmom and other packages)
+# Install CORE Python libraries only (smaller subset)
 RUN /opt/venv/bin/pip install --no-cache-dir \
-    cython \
-    numpy
-
-# Install Python audio and AI libraries in venv
-RUN /opt/venv/bin/pip install --no-cache-dir \
+    numpy \
+    scipy \
     librosa==0.10.2 \
     soundfile \
     pydub \
-    audioread \
-    resampy \
     torchaudio \
-    torchvision \
     demucs \
-    essentia \
-    pyworld \
-    praat-parselmouth \
-    faiss-cpu \
-    noisereduce \
-    pedalboard \
-    scipy \
-    numba \
-    matplotlib \
     transformers \
     accelerate \
-    aubio \
-    madmom \
-    mir_eval
-
-# Install fairseq and pyannote separately (can have dependency conflicts)
-RUN /opt/venv/bin/pip install --no-cache-dir \
-    fairseq || echo "fairseq install failed, continuing..."
-
-RUN /opt/venv/bin/pip install --no-cache-dir \
-    pyannote.audio || echo "pyannote.audio install failed, continuing..."
+    && rm -rf /root/.cache/pip
 
 # ============================================
-# VST PLUGIN SUPPORT
+# VST PLUGIN DIRECTORIES (no plugins yet)
 # ============================================
 
-# Create VST plugin directories
+# Create VST plugin directories (install plugins in child images)
 RUN mkdir -p \
     /usr/lib/vst \
     /usr/lib/vst3 \
     /home/kasm-user/.vst \
     /home/kasm-user/.vst3 \
     /home/kasm-user/.lv2
-
-# Install WINE for Windows VST support (optional but useful)
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y \
-    wine64 \
-    wine32 \
-    winetricks \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Yabridge for Windows VST bridge
-RUN cd /tmp && \
-    wget https://github.com/robbert-vdh/yabridge/releases/download/5.1.0/yabridge-5.1.0.tar.gz && \
-    tar -C /usr -xavf yabridge-5.1.0.tar.gz && \
-    rm yabridge-5.1.0.tar.gz
-
-# ============================================
-# FREE LINUX-NATIVE VST PLUGINS
-# ============================================
-
-# Install LSP Plugins (comprehensive suite)
-RUN apt-get update && apt-get install -y \
-    lsp-plugins-lv2 \
-    lsp-plugins-vst \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Vital synth (modern wavetable synth)
-RUN cd /tmp && \
-    wget https://github.com/mtytel/vital/releases/download/v1.5.5/vital-1.5.5-linux-x86_64.tar.gz && \
-    tar -xzf vital-1.5.5-linux-x86_64.tar.gz && \
-    cp -r Vital/VST3/Vital.vst3 /usr/lib/vst3/ && \
-    cp -r Vital/LV2/Vital.lv2 /home/kasm-user/.lv2/ && \
-    rm -rf Vital vital-1.5.5-linux-x86_64.tar.gz
-
-# Install Surge XT synth
-RUN cd /tmp && \
-    wget https://github.com/surge-synthesizer/releases-xt/releases/download/1.3.4/surge-xt-linux-x64-1.3.4.deb && \
-    apt-get update && apt-get install -y ./surge-xt-linux-x64-1.3.4.deb && \
-    rm surge-xt-linux-x64-1.3.4.deb && \
-    rm -rf /var/lib/apt/lists/*
 
 # ============================================
 # AI MODEL CACHING SETUP
@@ -217,10 +151,8 @@ ENV TORCH_HOME=/home/kasm-user/.cache/torch
 
 # Install Node.js and Firefox
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y \
-    nodejs \
-    firefox \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y nodejs firefox && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install Reaper
 RUN cd /tmp && \
@@ -230,143 +162,4 @@ RUN cd /tmp && \
     ./install-reaper.sh --install /opt/reaper --integrate-desktop --usr-local-bin-symlink && \
     cd / && rm -rf /tmp/reaper*
 
-# Create kasm-user with UID/GID 1001 (1000 already taken by base image)
-RUN groupadd -g 1001 kasm-user && \
-    useradd -u 1001 -g 1001 -s /bin/bash -m kasm-user && \
-    usermod -aG audio kasm-user && \
-    usermod -aG video kasm-user
-
-# Set up pyenv for kasm-user
-RUN echo 'export PYENV_ROOT="/opt/pyenv"' >> /home/kasm-user/.bashrc && \
-    echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/kasm-user/.bashrc && \
-    echo 'eval "$(pyenv init --path)"' >> /home/kasm-user/.bashrc && \
-    echo 'eval "$(pyenv init -)"' >> /home/kasm-user/.bashrc && \
-    echo 'source /opt/venv/bin/activate' >> /home/kasm-user/.bashrc
-
-# Create user directories
-RUN mkdir -p /home/kasm-user/.vnc \
-    /home/kasm-user/Desktop \
-    /home/kasm-user/workspace \
-    /home/kasm-user/audio \
-    /home/kasm-user/projects \
-    /home/kasm-user/.config/REAPER \
-    /home/kasm-user/.cache/huggingface \
-    /home/kasm-user/.cache/torch \
-    /home/kasm-user/.cache/demucs \
-    /home/kasm-user/models \
-    /home/kasm-user/scripts
-
-# Configure Reaper VST paths
-RUN echo 'vstpath=/usr/lib/vst' > /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini && \
-    echo 'vstpath=/usr/lib/vst3' >> /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini && \
-    echo 'vstpath=/home/kasm-user/.vst' >> /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini && \
-    echo 'vstpath=/home/kasm-user/.vst3' >> /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini
-
-# Create Demucs helper script
-RUN echo '#!/bin/bash\n\
-# Demucs stem separation helper\n\
-# Usage: ./demucs-split.sh <audio-file>\n\
-source /opt/venv/bin/activate\n\
-INPUT_FILE="$1"\n\
-OUTPUT_DIR="${2:-./separated}"\n\
-\n\
-if [ -z "$INPUT_FILE" ]; then\n\
-    echo "Usage: $0 <audio-file> [output-dir]"\n\
-    exit 1\n\
-fi\n\
-\n\
-echo "Separating stems from: $INPUT_FILE"\n\
-demucs --two-stems=vocals "$INPUT_FILE" -o "$OUTPUT_DIR"\n\
-echo "Done! Check $OUTPUT_DIR for separated stems"' > /home/kasm-user/scripts/demucs-split.sh && \
-    chmod +x /home/kasm-user/scripts/demucs-split.sh
-
-# Create audio format converter helper
-RUN echo '#!/bin/bash\n\
-# Audio format converter using FFmpeg\n\
-# Usage: ./convert-audio.sh <input> <output>\n\
-INPUT="$1"\n\
-OUTPUT="$2"\n\
-\n\
-if [ -z "$INPUT" ] || [ -z "$OUTPUT" ]; then\n\
-    echo "Usage: $0 <input-file> <output-file>"\n\
-    exit 1\n\
-fi\n\
-\n\
-ffmpeg -i "$INPUT" -ar 44100 -ac 2 -b:a 320k "$OUTPUT"' > /home/kasm-user/scripts/convert-audio.sh && \
-    chmod +x /home/kasm-user/scripts/convert-audio.sh
-
-# Fix permissions before switching to kasm-user
-RUN chown -R kasm-user:kasm-user /home/kasm-user
-
-# Set up KasmVNC password as kasm-user
-USER kasm-user
-RUN mkdir -p ~/.vnc && \
-    printf "quickpod123\nquickpod123\n" | vncpasswd -u kasm-user -w ~/.vnc/passwd && \
-    chmod 600 ~/.vnc/passwd
-
-# Switch back to root for remaining setup
-USER root
-
-# Main startup script
-RUN echo '#!/bin/bash\n\
-# Activate venv\n\
-source /opt/venv/bin/activate\n\
-\n\
-# Start PulseAudio\n\
-pulseaudio -D --exit-idle-time=-1 2>/dev/null || true\n\
-\n\
-# Start KasmVNC as kasm-user\n\
-su - kasm-user -c "vncserver :1 -depth 24 -geometry 1920x1080 -websocket 6901 -interface 0.0.0.0"\n\
-\n\
-echo ""\n\
-echo "╔════════════════════════════════════════════════════════════╗"\n\
-echo "║   CUDA 13.0 + Kasm + Reaper Desktop (Ubuntu 24.04)        ║"\n\
-echo "║   AI Audio Workstation Base Image                         ║"\n\
-echo "║   Access at: https://YOUR_IP:6901                         ║"\n\
-echo "╚════════════════════════════════════════════════════════════╝"\n\
-echo ""\n\
-echo "Default password: quickpod123"\n\
-echo ""\n\
-echo "Python: $(python --version)"\n\
-echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo Detection pending...)"\n\
-echo "CUDA: $(nvcc --version 2>/dev/null | grep release | awk '"'"'{print $5}'"'"' | sed '"'"'s/,//'"'"' || echo 13.0)"\n\
-echo ""\n\
-echo "Reaper installed at: /opt/reaper"\n\
-echo "Audio projects: ~/audio"\n\
-echo "General workspace: ~/workspace"\n\
-echo "Helper scripts: ~/scripts"\n\
-echo ""\n\
-echo "Available AI Tools:"\n\
-echo "  - Demucs stem separation"\n\
-echo "  - Voice cloning libraries (RVC)"\n\
-echo "  - Audio processing (librosa, torchaudio)"\n\
-echo "  - VST plugins (LSP, Vital, Surge XT)"\n\
-echo ""\n\
-\n\
-# Keep container running\n\
-tail -f /home/kasm-user/.vnc/*.log' > /usr/local/bin/start-services.sh && \
-    chmod +x /usr/local/bin/start-services.sh
-
-# Create Reaper desktop shortcut
-RUN echo '[Desktop Entry]\n\
-Version=1.0\n\
-Type=Application\n\
-Name=Reaper\n\
-Comment=Digital Audio Workstation\n\
-Exec=/opt/reaper/reaper\n\
-Icon=/opt/reaper/Resources/main.png\n\
-Terminal=false\n\
-Categories=AudioVideo;Audio;Recorder;' > /home/kasm-user/Desktop/reaper.desktop && \
-    chmod +x /home/kasm-user/Desktop/reaper.desktop
-
-# Final permission fix
-RUN chown -R kasm-user:kasm-user /home/kasm-user
-
-# Set working directory
-WORKDIR /home/kasm-user
-
-# Expose Kasm port
-EXPOSE 6901
-
-# Start services
-CMD ["/usr/local/bin/start-services.sh"]
+# Create kasm-user with UID/GID 1001 (1000 already taken by base
