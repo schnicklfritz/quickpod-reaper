@@ -118,6 +118,11 @@ RUN apt-get update && apt-get install -y \
     opus-tools \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Cython first (required for madmom and other packages)
+RUN /opt/venv/bin/pip install --no-cache-dir \
+    cython \
+    numpy
+
 # Install Python audio and AI libraries in venv
 RUN /opt/venv/bin/pip install --no-cache-dir \
     librosa==0.10.2 \
@@ -132,8 +137,6 @@ RUN /opt/venv/bin/pip install --no-cache-dir \
     pyworld \
     praat-parselmouth \
     faiss-cpu \
-    fairseq \
-    pyannote.audio \
     noisereduce \
     pedalboard \
     scipy \
@@ -144,6 +147,13 @@ RUN /opt/venv/bin/pip install --no-cache-dir \
     aubio \
     madmom \
     mir_eval
+
+# Install fairseq and pyannote separately (can have dependency conflicts)
+RUN /opt/venv/bin/pip install --no-cache-dir \
+    fairseq || echo "fairseq install failed, continuing..."
+
+RUN /opt/venv/bin/pip install --no-cache-dir \
+    pyannote.audio || echo "pyannote.audio install failed, continuing..."
 
 # ============================================
 # VST PLUGIN SUPPORT
