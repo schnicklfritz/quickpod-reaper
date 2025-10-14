@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  quickpod-reaper:
+  quickpod-reaper-base:
     build: .
-    image: ${DOCKERHUB_USERNAME:-schnicklbob}/quickpod-reaper:latest
-    container_name: quickpod-reaper
-    hostname: quickpod-reaper
+    image: ${DOCKERHUB_USERNAME:-schnicklbob}/quickpod-reaper-base:latest
+    container_name: quickpod-reaper-base
+    hostname: quickpod-reaper-base
     
     # GPU configuration
     deploy:
@@ -18,25 +18,22 @@ services:
     
     # Port mappings
     ports:
-      - "6901:6901"  # Kasm web desktop (HTTPS)
-      - "8000:8000"  # vLLM OpenAI-compatible API
-      - "8001:8001"  # SillyTavern web interface
+      - "6901:6901"  # KasmVNC web desktop (HTTPS)
     
     # Environment variables
     environment:
-      # Kasm desktop password
+      # KasmVNC password
       - VNC_PW=${VNC_PASSWORD:-quickpod123}
       
-      # vLLM configuration
-      - VLLM_MODEL=${VLLM_MODEL:-TheBloke/dolphin-2.8-mixtral-8x7b-AWQ}
-      - MAX_CONTEXT=${MAX_CONTEXT:-32768}
-      - VLLM_USE_V1=0
+      # Display configuration
+      - DISPLAY=:1
       
       # Audio configuration
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
       
-      # Display configuration
-      - DISPLAY=:1
+      # CUDA environment (already set in Dockerfile but can override)
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
     
     # Volume mounts for persistent data
     volumes:
@@ -46,24 +43,22 @@ services:
       # Reaper configuration and projects
       - ./reaper-config:/home/kasm-user/.config/REAPER
       
-      # Audio samples and voice cloning data
+      # Audio projects and samples
       - ./audio:/home/kasm-user/audio
       
-      # Optional: Mount local models to avoid re-downloading
-      # - ~/models:/models:ro
+      # Python virtual environment packages (optional - for persistence)
+      - ./venv-site-packages:/opt/venv/lib/python3.11/site-packages
+      
+      # AI models cache (optional - to avoid re-downloading)
+      - ./huggingface-cache:/home/kasm-user/.cache/huggingface
+      - ./torch-cache:/home/kasm-user/.cache/torch
     
-    # Shared memory size (important for large models and audio processing)
-    shm_size: '8gb'
+    # Shared memory size (critical for ML models and audio processing)
+    shm_size: '16gb'
     
     # Restart policy
     restart: unless-stopped
     
-    # Optional: Add custom DNS if needed
-    # dns:
-    #   - 8.8.8.8
-    #   - 8.8.4.4
-
-# Optional: Add network configuration
-# networks:
-#   default:
-#     name: quickpod-network
+    # Optional: Resource limits
+    # mem_limit: 32g
+    # cpus: '8'
