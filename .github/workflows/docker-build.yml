@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: quickpod-reaper
+  IMAGE_NAME: quickpod-reaper-base
   DOCKERHUB_USERNAME: schnicklbob
 
 jobs:
@@ -24,11 +24,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Check available disk space
+        run: |
+          echo "Disk space before build:"
+          df -h
+          echo "Docker system info:"
+          docker system df
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
 
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
@@ -58,8 +80,24 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
           
+      - name: Check disk space after build
+        if: always()
+        run: |
+          echo "Disk space after build:"
+          df -h
+          docker system df
+
       - name: Image digest
+        if: github.event_name != 'pull_request'
         run: echo ${{ steps.meta.outputs.digest }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker system prune -af --volumes
+          df -h

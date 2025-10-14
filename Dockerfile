@@ -1,165 +1,147 @@
-# Start with NVIDIA's official CUDA 13.0 image (Ubuntu 24.04)
-FROM nvidia/cuda:13.0.1-devel-ubuntu24.04
+# ============================================
+# STAGE 1: Base System + Desktop
+# ============================================
+FROM nvidia/cuda:13.0.1-devel-ubuntu24.04 AS base-system
 
 USER root
-
-# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/usr/local/cuda-13.0/bin:${PATH}
 ENV LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:${LD_LIBRARY_PATH}
 ENV CUDA_HOME=/usr/local/cuda-13.0
 
-# Install basic dependencies
+# Install system dependencies in one layer with aggressive cleanup
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    wget \
-    curl \
-    gnupg2 \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    software-properties-common wget curl gnupg2 ca-certificates \
+    xfce4 xfce4-goodies dbus-x11 xorg \
+    libasound2t64 alsa-utils pulseaudio pulseaudio-utils libjack-jackd2-0 \
+    xdotool libfontconfig1 libfreetype6 libx11-6 libxcb1 libxext6 libxrender1 libxi6 libxrandr2 \
+    && cd /tmp \
+    && wget https://github.com/kasmtech/KasmVNC/releases/download/v1.3.2/kasmvncserver_noble_1.3.2_amd64.deb \
+    && apt-get install -y ./kasmvncserver_noble_1.3.2_amd64.deb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/*
 
-# Install desktop environment and audio dependencies
-RUN apt-get update && apt-get install -y \
-    xfce4 \
-    xfce4-goodies \
-    dbus-x11 \
-    xorg \
-    libasound2t64 \
-    alsa-utils \
-    pulseaudio \
-    pulseaudio-utils \
-    libjack-jackd2-0 \
-    xdotool \
-    libfontconfig1 \
-    libfreetype6 \
-    libx11-6 \
-    libxcb1 \
-    libxext6 \
-    libxrender1 \
-    libxi6 \
-    libxrandr2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install KasmVNC for Ubuntu 24.04 (Noble)
-RUN cd /tmp && \
-    wget https://github.com/kasmtech/KasmVNC/releases/download/v1.3.2/kasmvncserver_noble_1.3.2_amd64.deb && \
-    apt-get update && \
-    apt-get install -y ./kasmvncserver_noble_1.3.2_amd64.deb && \
-    rm kasmvncserver_noble_1.3.2_amd64.deb && \
-    rm -rf /var/lib/apt/lists/*
+# ============================================
+# STAGE 2: Python Environment
+# ============================================
+FROM base-system AS python-env
 
 # Install pyenv dependencies
 RUN apt-get update && apt-get install -y \
-    make \
-    build-essential \
-    libssl-dev \
-    zlib1g-dev \
-    libbz2-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    wget \
-    curl \
-    llvm \
-    libncurses5-dev \
-    libncursesw5-dev \
-    xz-utils \
-    tk-dev \
-    libffi-dev \
-    liblzma-dev \
-    git \
-    vim \
-    htop \
-    && rm -rf /var/lib/apt/lists/*
+    make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev \
+    libsqlite3-dev llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev \
+    libffi-dev liblzma-dev git vim htop \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install pyenv
 ENV PYENV_ROOT="/opt/pyenv"
 ENV PATH="$PYENV_ROOT/bin:$PATH"
 
-RUN git clone https://github.com/pyenv/pyenv.git $PYENV_ROOT && \
-    cd $PYENV_ROOT && src/configure && make -C src
+RUN git clone --depth 1 https://github.com/pyenv/pyenv.git $PYENV_ROOT \
+    && cd $PYENV_ROOT && src/configure && make -C src \
+    && rm -rf $PYENV_ROOT/.git
 
-# Initialize pyenv
-RUN echo 'eval "$(pyenv init --path)"' >> /root/.bashrc && \
-    echo 'eval "$(pyenv init -)"' >> /root/.bashrc
+# Install Python and create venv
+RUN eval "$(pyenv init --path)" && eval "$(pyenv init -)" \
+    && pyenv install 3.11.9 && pyenv global 3.11.9
 
-# Install Python 3.11.9 via pyenv
-RUN eval "$(pyenv init --path)" && \
-    eval "$(pyenv init -)" && \
-    pyenv install 3.11.9 && \
-    pyenv global 3.11.9
-
-# Set Python paths
 ENV PATH="$PYENV_ROOT/versions/3.11.9/bin:$PATH"
 
-# Create virtual environment
-RUN eval "$(pyenv init --path)" && \
-    eval "$(pyenv init -)" && \
-    python -m venv /opt/venv
-
-# Activate venv by default
+RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Upgrade pip in venv
-RUN pip install --upgrade pip setuptools wheel
-
-# ============================================
-# ESSENTIAL AUDIO TOOLS ONLY
-# ============================================
-
-# Install FFmpeg and essential audio CLI tools (combined to reduce layers)
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    sox \
-    libsox-fmt-all \
-    rubberband-cli \
-    lame \
-    flac \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Install CORE Python libraries only (smaller subset)
-RUN /opt/venv/bin/pip install --no-cache-dir \
-    numpy \
-    scipy \
-    librosa==0.10.2 \
-    soundfile \
-    pydub \
-    torchaudio \
-    demucs \
-    transformers \
-    accelerate \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && rm -rf /root/.cache/pip
 
 # ============================================
-# VST PLUGIN DIRECTORIES (no plugins yet)
+# STAGE 3: Audio Tools + Python Libs
 # ============================================
+FROM python-env AS audio-tools
 
-# Create VST plugin directories (install plugins in child images)
-RUN mkdir -p \
-    /usr/lib/vst \
-    /usr/lib/vst3 \
-    /home/kasm-user/.vst \
-    /home/kasm-user/.vst3 \
-    /home/kasm-user/.lv2
+# Install audio tools and Node.js in one layer
+RUN apt-get update && apt-get install -y \
+    ffmpeg sox libsox-fmt-all rubberband-cli lame flac firefox \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install Python libraries in smaller batches to avoid running out of space
+RUN pip install --no-cache-dir numpy scipy \
+    && rm -rf /root/.cache/pip /tmp/*
+
+RUN pip install --no-cache-dir librosa==0.10.2 soundfile pydub \
+    && rm -rf /root/.cache/pip /tmp/*
+
+RUN pip install --no-cache-dir torchaudio torchvision \
+    && rm -rf /root/.cache/pip /tmp/*
+
+RUN pip install --no-cache-dir demucs transformers accelerate \
+    && rm -rf /root/.cache/pip /tmp/*
 
 # ============================================
-# AI MODEL CACHING SETUP
+# STAGE 4: Final Assembly
 # ============================================
+FROM audio-tools AS final
 
-# Set Hugging Face cache location
+# Install Reaper
+RUN cd /tmp \
+    && wget https://www.reaper.fm/files/7.x/reaper725_linux_x86_64.tar.xz \
+    && tar -xf reaper725_linux_x86_64.tar.xz \
+    && cd reaper_linux_x86_64 \
+    && ./install-reaper.sh --install /opt/reaper --integrate-desktop --usr-local-bin-symlink \
+    && cd / && rm -rf /tmp/*
+
+# Create kasm-user
+RUN groupadd -g 1001 kasm-user \
+    && useradd -u 1001 -g 1001 -s /bin/bash -m kasm-user \
+    && usermod -aG audio,video kasm-user
+
+# Set up user environment
+RUN echo 'export PYENV_ROOT="/opt/pyenv"' >> /home/kasm-user/.bashrc \
+    && echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> /home/kasm-user/.bashrc \
+    && echo 'eval "$(pyenv init --path)"' >> /home/kasm-user/.bashrc \
+    && echo 'eval "$(pyenv init -)"' >> /home/kasm-user/.bashrc \
+    && echo 'source /opt/venv/bin/activate' >> /home/kasm-user/.bashrc
+
+# Create directories
+RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,models} \
+    /home/kasm-user/.config/REAPER \
+    /home/kasm-user/.cache/{huggingface,torch} \
+    /usr/lib/{vst,vst3} \
+    /home/kasm-user/{.vst,.vst3,.lv2}
+
+# Set environment variables
 ENV HF_HOME=/home/kasm-user/.cache/huggingface
 ENV TORCH_HOME=/home/kasm-user/.cache/torch
 
-# Install Node.js and Firefox
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs firefox && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Configure Reaper VST paths
+RUN echo 'vstpath=/usr/lib/vst\nvstpath=/usr/lib/vst3\nvstpath=/home/kasm-user/.vst\nvstpath=/home/kasm-user/.vst3' \
+    > /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini
 
-# Install Reaper
-RUN cd /tmp && \
-    wget https://www.reaper.fm/files/7.x/reaper725_linux_x86_64.tar.xz && \
-    tar -xf reaper725_linux_x86_64.tar.xz && \
-    cd reaper_linux_x86_64 && \
-    ./install-reaper.sh --install /opt/reaper --integrate-desktop --usr-local-bin-symlink && \
-    cd / && rm -rf /tmp/reaper*
+# Create helper scripts
+RUN echo '#!/bin/bash\nsource /opt/venv/bin/activate\nif [ -z "$1" ]; then echo "Usage: $0 <audio-file> [output-dir]"; exit 1; fi\ndemucs --two-stems=vocals "$1" -o "${2:-./separated}"' \
+    > /home/kasm-user/scripts/demucs-split.sh && chmod +x /home/kasm-user/scripts/demucs-split.sh
 
-# Create kasm-user with UID/GID 1001 (1000 already taken by base
+RUN echo '#!/bin/bash\nif [ -z "$1" ] || [ -z "$2" ]; then echo "Usage: $0 <input> <output>"; exit 1; fi\nffmpeg -i "$1" -ar 44100 -ac 2 -b:a 320k "$2"' \
+    > /home/kasm-user/scripts/convert-audio.sh && chmod +x /home/kasm-user/scripts/convert-audio.sh
+
+# Set up KasmVNC
+USER kasm-user
+RUN mkdir -p ~/.vnc \
+    && printf "quickpod123\nquickpod123\n" | vncpasswd -u kasm-user -w ~/.vnc/passwd \
+    && chmod 600 ~/.vnc/passwd
+
+USER root
+
+# Startup script
+RUN echo '#!/bin/bash\nsource /opt/venv/bin/activate\npulseaudio -D --exit-idle-time=-1 2>/dev/null || true\nsu - kasm-user -c "vncserver :1 -depth 24 -geometry 1920x1080 -websocket 6901 -interface 0.0.0.0"\necho "CUDA Reaper Base - Access at: https://YOUR_IP:6901 (password: quickpod123)"\ntail -f /home/kasm-user/.vnc/*.log' \
+    > /usr/local/bin/start-services.sh && chmod +x /usr/local/bin/start-services.sh
+
+# Desktop shortcut
+RUN echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=Reaper\nExec=/opt/reaper/reaper\nIcon=/opt/reaper/Resources/main.png\nTerminal=false\nCategories=AudioVideo;' \
+    > /home/kasm-user/Desktop/reaper.desktop && chmod +x /home/kasm-user/Desktop/reaper.desktop
+
+RUN chown -R kasm-user:kasm-user /home/kasm-user
+
+WORKDIR /home/kasm-user
+EXPOSE 6901
+CMD ["/usr/local/bin/start-services.sh"]
