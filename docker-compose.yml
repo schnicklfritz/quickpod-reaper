@@ -37,9 +37,14 @@ services:
     
     # Volume mounts for persistent data
     volumes:
-      # General workspace
-      - ./workspace:/home/kasm-user/workspace
       
+      # Use all available VRAM
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      
+      # Enable multi-threading
+      - OMP_NUM_THREADS=20
+      - MKL_NUM_THREADS=20      
+
       # Reaper configuration and projects
       - ./reaper-config:/home/kasm-user/.config/REAPER
       
@@ -54,7 +59,7 @@ services:
       - ./torch-cache:/home/kasm-user/.cache/torch
     
     # Shared memory size (critical for ML models and audio processing)
-    shm_size: '16gb'
+    shm_size: '32gb'
     
     # Restart policy
     restart: unless-stopped
