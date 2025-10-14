@@ -168,10 +168,23 @@ RUN echo '#!/bin/bash\nsource /opt/venv/bin/activate\npulseaudio -D --exit-idle-
     > /usr/local/bin/start-services.sh && chmod +x /usr/local/bin/start-services.sh
 
 # Desktop shortcut
-RUN echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=Reaper\nExec=/opt/reaper/reaper\nIcon=/opt/reaper/Resources/main.png\nTerminal=false\nCategories=AudioVideo;' \
-    > /home/kasm-user/Desktop/reaper.desktop && chmod +x /home/kasm-user/Desktop/reaper.desktop
+RUN mkdir -p /home/kasm-user/Desktop
+
+RUN cat > /home/kasm-user/Desktop/reaper.desktop << 'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Reaper
+Exec=/opt/reaper/reaper
+Icon=/opt/reaper/Resources/main.png
+Terminal=false
+Categories=AudioVideo;
+EOF
+
+RUN chmod +x /home/kasm-user/Desktop/reaper.desktop
 
 RUN chown -R kasm-user:kasm-user /home/kasm-user
+
 
 WORKDIR /home/kasm-user
 EXPOSE 6901
