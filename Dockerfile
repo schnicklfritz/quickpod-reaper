@@ -116,13 +116,44 @@ ENV TORCH_HOME=/home/kasm-user/.cache/torch
 # Configure Reaper VST paths
 RUN echo 'vstpath=/usr/lib/vst\nvstpath=/usr/lib/vst3\nvstpath=/home/kasm-user/.vst\nvstpath=/home/kasm-user/.vst3' \
     > /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini
+# Create helper scripts directory explicitly
+RUN mkdir -p /home/kasm-user/scripts
 
-# Create helper scripts
-RUN echo '#!/bin/bash\nsource /opt/venv/bin/activate\nif [ -z "$1" ]; then echo "Usage: $0 <audio-file> [output-dir]"; exit 1; fi\ndemucs --two-stems=vocals "$1" -o "${2:-./separated}"' \
-    > /home/kasm-user/scripts/demucs-split.sh && chmod +x /home/kasm-user/scripts/demucs-split.sh
+# Create Demucs helper script
+RUN cat > /home/kasm-user/scripts/demucs-split.sh << 'EOF'
+#!/bin/bash
+source /opt/venv/bin/activate
+INPUT_FILE="$1"
+OUTPUT_DIR="${2:-./separated}"
 
-RUN echo '#!/bin/bash\nif [ -z "$1" ] || [ -z "$2" ]; then echo "Usage: $0 <input> <output>"; exit 1; fi\nffmpeg -i "$1" -ar 44100 -ac 2 -b:a 320k "$2"' \
-    > /home/kasm-user/scripts/convert-audio.sh && chmod +x /home/kasm-user/scripts/convert-audio.sh
+if [ -z "$INPUT_FILE" ]; then
+    echo "Usage: $0 <audio-file> [output-dir]"
+    exit 1
+fi
+
+echo "Separating stems from: $INPUT_FILE"
+demucs --two-stems=vocals "$INPUT_FILE" -o "$OUTPUT_DIR"
+echo "Done! Check $OUTPUT_DIR for separated stems"
+EOF
+
+RUN chmod +x /home/kasm-user/scripts/demucs-split.sh
+
+# Create audio converter helper script
+RUN cat > /home/kasm-user/scripts/convert-audio.sh << 'EOF'
+#!/bin/bash
+INPUT="$1"
+OUTPUT="$2"
+
+if [ -z "$INPUT" ] || [ -z "$OUTPUT" ]; then
+    echo "Usage: $0 <input-file> <output-file>"
+    exit 1
+fi
+
+ffmpeg -i "$INPUT" -ar 44100 -ac 2 -b:a 320k "$OUTPUT"
+EOF
+
+RUN chmod +x /home/kasm-user/scripts/convert-audio.sh
+
 
 # Set up KasmVNC
 USER kasm-user
