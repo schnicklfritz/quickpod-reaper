@@ -1,15 +1,12 @@
 # ============================================
 # STAGE 1: Base System + Desktop
 # ============================================
-FROM nvidia/cuda:13.0.1-devel-ubuntu24.04 AS base-system
+FROM nvidia/cuda:13.0.1-runtime-ubuntu24.04 AS base-system
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/usr/local/cuda-13.0/bin:${PATH}
-ENV LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:${LD_LIBRARY_PATH}
-ENV CUDA_HOME=/usr/local/cuda-13.0
 
-# Install system dependencies in one layer with aggressive cleanup
+# Install system dependencies with aggressive cleanup
 RUN apt-get update && apt-get install -y \
     software-properties-common wget curl gnupg2 ca-certificates \
     xfce4 xfce4-goodies dbus-x11 xorg \
@@ -19,6 +16,14 @@ RUN apt-get update && apt-get install -y \
     && wget https://github.com/kasmtech/KasmVNC/releases/download/v1.3.2/kasmvncserver_noble_1.3.2_amd64.deb \
     && apt-get install -y ./kasmvncserver_noble_1.3.2_amd64.deb \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/*
+
+# Generate SSL certificate for KasmVNC
+RUN mkdir -p /etc/ssl/private \
+    && openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout /etc/ssl/private/ssl-cert-snakeoil.key \
+    -out /etc/ssl/certs/ssl-cert-snakeoil.pem \
+    -days 3650 -subj "/CN=kasmvnc" \
+    && chmod 640 /etc/ssl/private/ssl-cert-snakeoil.key
 
 # ============================================
 # STAGE 2: Python Environment
@@ -57,25 +62,31 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
 # ============================================
 FROM python-env AS audio-tools
 
-# Install audio tools and Node.js in one layer
+# Install audio tools and Node.js
 RUN apt-get update && apt-get install -y \
     ffmpeg sox libsox-fmt-all rubberband-cli lame flac firefox \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install Python libraries in smaller batches to avoid running out of space
+# Install Python libraries with aggressive cleanup
 RUN pip install --no-cache-dir numpy scipy \
-    && rm -rf /root/.cache/pip /tmp/*
+    && rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 RUN pip install --no-cache-dir librosa==0.10.2 soundfile pydub \
-    && rm -rf /root/.cache/pip /tmp/*
+    && rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
-RUN pip install --no-cache-dir torchaudio torchvision \
-    && rm -rf /root/.cache/pip /tmp/*
+# Install PyTorch with CUDA support and aggressive cleanup
+RUN pip install --no-cache-dir torch torchvision torchaudio \
+    && rm -rf /root/.cache/pip /tmp/* /var/tmp/* \
+    && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/venv -type f -name "*.pyc" -delete \
+    && find /opt/venv -type f -name "*.pyo" -delete
 
 RUN pip install --no-cache-dir demucs transformers accelerate \
-    && rm -rf /root/.cache/pip /tmp/*
+    && rm -rf /root/.cache/pip /tmp/* /var/tmp/* \
+    && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/venv -type f -name "*.pyc" -delete
 
 # ============================================
 # STAGE 4: Final Assembly
@@ -105,87 +116,4 @@ RUN echo 'export PYENV_ROOT="/opt/pyenv"' >> /home/kasm-user/.bashrc \
 # Create directories
 RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,models} \
     /home/kasm-user/.config/REAPER \
-    /home/kasm-user/.cache/{huggingface,torch} \
-    /usr/lib/{vst,vst3} \
-    /home/kasm-user/{.vst,.vst3,.lv2}
-
-# Set environment variables
-ENV HF_HOME=/home/kasm-user/.cache/huggingface
-ENV TORCH_HOME=/home/kasm-user/.cache/torch
-
-# Configure Reaper VST paths
-RUN echo 'vstpath=/usr/lib/vst\nvstpath=/usr/lib/vst3\nvstpath=/home/kasm-user/.vst\nvstpath=/home/kasm-user/.vst3' \
-    > /home/kasm-user/.config/REAPER/reaper-vstpaths64.ini
-# Create helper scripts directory explicitly
-RUN mkdir -p /home/kasm-user/scripts
-
-# Create Demucs helper script
-RUN cat > /home/kasm-user/scripts/demucs-split.sh << 'EOF'
-#!/bin/bash
-source /opt/venv/bin/activate
-INPUT_FILE="$1"
-OUTPUT_DIR="${2:-./separated}"
-
-if [ -z "$INPUT_FILE" ]; then
-    echo "Usage: $0 <audio-file> [output-dir]"
-    exit 1
-fi
-
-echo "Separating stems from: $INPUT_FILE"
-demucs --two-stems=vocals "$INPUT_FILE" -o "$OUTPUT_DIR"
-echo "Done! Check $OUTPUT_DIR for separated stems"
-EOF
-
-RUN chmod +x /home/kasm-user/scripts/demucs-split.sh
-
-# Create audio converter helper script
-RUN cat > /home/kasm-user/scripts/convert-audio.sh << 'EOF'
-#!/bin/bash
-INPUT="$1"
-OUTPUT="$2"
-
-if [ -z "$INPUT" ] || [ -z "$OUTPUT" ]; then
-    echo "Usage: $0 <input-file> <output-file>"
-    exit 1
-fi
-
-ffmpeg -i "$INPUT" -ar 44100 -ac 2 -b:a 320k "$OUTPUT"
-EOF
-
-RUN chmod +x /home/kasm-user/scripts/convert-audio.sh
-
-
-# Set up KasmVNC
-USER kasm-user
-RUN mkdir -p ~/.vnc \
-    && printf "quickpod123\nquickpod123\n" | vncpasswd -u kasm-user -w ~/.vnc/passwd \
-    && chmod 600 ~/.vnc/passwd
-
-USER root
-
-# Startup script
-RUN echo '#!/bin/bash\nsource /opt/venv/bin/activate\npulseaudio -D --exit-idle-time=-1 2>/dev/null || true\nsu - kasm-user -c "vncserver :1 -depth 24 -geometry 1920x1080 -websocket 6901 -interface 0.0.0.0"\necho "CUDA Reaper Base - Access at: https://YOUR_IP:6901 (password: quickpod123)"\ntail -f /home/kasm-user/.vnc/*.log' \
-    > /usr/local/bin/start-services.sh && chmod +x /usr/local/bin/start-services.sh
-
-# Desktop shortcut
-RUN mkdir -p /home/kasm-user/Desktop
-
-RUN cat > /home/kasm-user/Desktop/reaper.desktop << 'EOF'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Reaper
-Exec=/opt/reaper/reaper
-Icon=/opt/reaper/Resources/main.png
-Terminal=false
-Categories=AudioVideo;
-EOF
-
-RUN chmod +x /home/kasm-user/Desktop/reaper.desktop
-
-RUN chown -R kasm-user:kasm-user /home/kasm-user
-
-
-WORKDIR /home/kasm-user
-EXPOSE 6901
-CMD ["/usr/local/bin/start-services.sh"]
+    /home/kasm-user/.cache/{huggingface,torch
