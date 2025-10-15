@@ -1,103 +1,108 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Images
 
 on:
   push:
-    branches: 
+    branches:
       - main
-      - develop
-    tags:
-      - 'v*'
-  pull_request:
-    branches: 
-      - main
+    paths:
+      - 'base/**'
+      - 'covers/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
-env:
-  IMAGE_NAME: quickpod-reaper-base
-  DOCKERHUB_USERNAME: schnicklbob
-
 jobs:
-  build-and-push:
+  build-base:
+    name: Build Base Image
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Check available disk space
-        run: |
-          echo "Disk space before build:"
-          df -h
-          echo "Docker system info:"
-          docker system df
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Cache Docker layers
+        uses: actions/cache@v4
         with:
-          images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-base-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-base-
 
-      - name: Build and push Docker image
+      - name: Build and push base image
+        id: docker_build_base
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./base
+          push: true
+          tags: |
+            schnicklbob/quickpod-reaper-base:latest
+            schnicklbob/quickpod-reaper-base:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-          
-      - name: Check disk space after build
-        if: always()
+
+      - name: Move cache
         run: |
-          echo "Disk space after build:"
-          df -h
-          docker system df
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Image digest
-        if: github.event_name != 'pull_request'
-        run: echo ${{ steps.meta.outputs.digest }}
+        run: echo "Base image pushed with tags latest and ${{ github.sha }}"
 
-      - name: Cleanup
-        if: always()
+  build-covers:
+    name: Build Covers Image
+    needs: build-base
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.event.head_commit.modified, 'covers/')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-covers
+          key: ${{ runner.os }}-buildx-covers-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-covers-
+
+      - name: Build and push covers image
+        id: docker_build_covers
+        uses: docker/build-push-action@v5
+        with:
+          context: ./covers
+          push: true
+          tags: |
+            schnicklbob/quickpod-reaper-covers:latest
+            schnicklbob/quickpod-reaper-covers:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache-covers
+          cache-to: type=local,dest=/tmp/.buildx-cache-covers-new,mode=max
+          platforms: linux/amd64
+          build-args: |
+            BASE_IMAGE=schnicklbob/quickpod-reaper-base:latest
+
+      - name: Move cache
         run: |
-          docker system prune -af --volumes
-          df -h
+          rm -rf /tmp/.buildx-cache-covers
+          mv /tmp/.buildx-cache-covers-new /tmp/.buildx-cache-covers
+
+      - name: Image digest
+        run: echo "Covers image pushed with tags latest and ${{ github.sha }}"
