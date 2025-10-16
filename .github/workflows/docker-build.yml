@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'base/**'
-      - 'covers/**'
       - 'opt/**'
       - 'usr/**'
       - '.github/workflows/**'
@@ -44,36 +43,3 @@ jobs:
 
       - name: Image digest
         run: echo Base image pushed with tags latest and ${{ github.sha }}
-
-  build-covers:
-    name: Build Covers Image
-    needs: build-base
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push covers image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: covers/Dockerfile
-          push: true
-          tags: |
-            schnicklbob/quickpod-reaper-covers:latest
-            schnicklbob/quickpod-reaper-covers:${{ github.sha }}
-          platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            BASE_IMAGE=schnicklbob/quickpod-reaper-base:latest
