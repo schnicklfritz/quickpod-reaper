@@ -1,69 +1,40 @@
 version: '3.8'
 
 services:
-  quickpod-reaper-base:
-    build: .
+  reaper-desktop:
+    build:
+      context: .
+      dockerfile: base/Dockerfile
     image: ${DOCKERHUB_USERNAME:-schnicklbob}/quickpod-reaper-base:latest
-    container_name: quickpod-reaper-base
-    hostname: quickpod-reaper-base
-    
-    # GPU configuration
+    container_name: reaper-desktop
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu, compute, utility]
-    
-    # Port mappings
+              capabilities: [gpu]
     ports:
-      - "6901:6901"  # KasmVNC web desktop (HTTPS)
-    
-    # Environment variables
+      - "6901:6901"
+      - "8686:8686"
     environment:
-      # KasmVNC password
       - VNC_PW=${VNC_PASSWORD:-quickpod123}
-      
-      # Display configuration
       - DISPLAY=:1
-      
-      # Audio configuration
-      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
-      
-      # CUDA environment (already set in Dockerfile but can override)
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
-    
-    # Volume mounts for persistent data
+      - VNC_PORT=6901
+      - HEALTH_PORT=8686
+      - ENABLE_RVC=0
+      - ENABLE_MUSICGEN=0
+      - ENABLE_UVR=0
     volumes:
-      
-      # Use all available VRAM
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-      
-      # Enable multi-threading
-      - OMP_NUM_THREADS=20
-      - MKL_NUM_THREADS=20      
-
-      # Reaper configuration and projects
-      - ./reaper-config:/home/kasm-user/.config/REAPER
-      
-      # Audio projects and samples
+      - ./workspace:/home/kasm-user/workspace
       - ./audio:/home/kasm-user/audio
-      
-      # Python virtual environment packages (optional - for persistence)
-      - ./venv-site-packages:/opt/venv/lib/python3.11/site-packages
-      
-      # AI models cache (optional - to avoid re-downloading)
-      - ./huggingface-cache:/home/kasm-user/.cache/huggingface
-      - ./torch-cache:/home/kasm-user/.cache/torch
-    
-    # Shared memory size (critical for ML models and audio processing)
-    shm_size: '32gb'
-    
-    # Restart policy
+      - ./reaper-config:/home/kasm-user/.config/REAPER
+      - ./logs:/var/log/quickpod
+    shm_size: "8gb"
     restart: unless-stopped
-    
-    # Optional: Resource limits
-    # mem_limit: 32g
-    # cpus: '8'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8686 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s

@@ -117,3 +117,8 @@ RUN echo 'export PYENV_ROOT="/opt/pyenv"' >> /home/kasm-user/.bashrc \
 RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,models} \
     /home/kasm-user/.config/REAPER \
     /home/kasm-user/.cache/{huggingface,torch
+COPY opt/quickpod/bin /opt/quickpod/bin
+RUN chmod -R +x /opt/quickpod/bin && mkdir -p /var/log/quickpod
+COPY usr/local/bin/quickpod-entrypoint.sh /usr/local/bin/quickpod-entrypoint.sh
+RUN chmod +x /usr/local/bin/quickpod-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/quickpod-entrypoint.sh"]
