@@ -123,10 +123,12 @@ RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,mode
     /home/kasm-user/.cache/{huggingface,torch} \
     && chown -R kasm-user:kasm-user /home/kasm-user
 
-# Fix KasmVNC interactive prompt issue
+# Fix KasmVNC interactive prompt issue - skip password requirement
 RUN mkdir -p /home/kasm-user/.vnc && \
-    echo -e "kasm\nkasm\n" | vncpasswd -u kasm-user -w && \
-    echo "write_users=kasm-user" >> /home/kasm-user/.vnc/kasmvnc.yaml && \
+    touch /home/kasm-user/.vnc/passwd && \
+    chmod 600 /home/kasm-user/.vnc/passwd && \
+    echo "write_users=kasm-user" > /home/kasm-user/.vnc/kasmvnc.yaml && \
+    echo "owner=kasm-user" >> /home/kasm-user/.vnc/kasmvnc.yaml && \
     chown -R kasm-user:kasm-user /home/kasm-user/.vnc
 
 # Install net-tools for debugging
