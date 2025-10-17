@@ -117,6 +117,32 @@ RUN echo 'export PYENV_ROOT="/opt/pyenv"' >> /home/kasm-user/.bashrc \
 RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,models} \
     /home/kasm-user/.config/REAPER \
     /home/kasm-user/.cache/{huggingface,torch
+# Create directories
+RUN mkdir -p /home/kasm-user/{.vnc,Desktop,workspace,audio,projects,scripts,models} \
+    /home/kasm-user/.config/REAPER \
+    /home/kasm-user/.cache/{huggingface,torch} \
+    && chown -R kasm-user:kasm-user /home/kasm-user
+
+# Fix KasmVNC interactive prompt issue
+RUN mkdir -p /home/kasm-user/.vnc && \
+    echo "kasm" | vncpasswd -f > /home/kasm-user/.vnc/passwd && \
+    chmod 600 /home/kasm-user/.vnc/passwd && \
+    echo "write_users=kasm-user" >> /home/kasm-user/.vnc/kasmvnc.yaml && \
+    chown -R kasm-user:kasm-user /home/kasm-user/.vnc
+
+# Install net-tools for debugging
+RUN apt-get update && apt-get install -y net-tools && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy QuickPod scripts
+COPY opt/quickpod/bin /opt/quickpod/bin
+RUN chmod -R +x /opt/quickpod/bin && mkdir -p /var/log/quickpod
+COPY usr/local/bin/quickpod-entrypoint.sh /usr/local/bin/quickpod-entrypoint.sh
+RUN chmod +x /usr/local/bin/quickpod-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/quickpod-entrypoint.sh"]
+
+
+
 COPY opt/quickpod/bin /opt/quickpod/bin
 RUN chmod -R +x /opt/quickpod/bin && mkdir -p /var/log/quickpod
 COPY usr/local/bin/quickpod-entrypoint.sh /usr/local/bin/quickpod-entrypoint.sh
